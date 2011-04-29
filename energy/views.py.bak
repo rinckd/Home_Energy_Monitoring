@@ -1,0 +1,125 @@
+# -*- coding: utf-8 -*-
+from pyramid.view import view_config
+from pyramid.httpexceptions import HTTPFound
+
+from google.appengine.api.labs import taskqueue
+from google.appengine.ext import db
+from google.appengine.api.datastore import Key
+
+from dateutil.parser import parse
+from datetime import datetime, date, timedelta
+import re
+
+import models
+import config
+
+def root_view(request):
+    return HTTPFound(location='/data/12/21/2010/hallway')
+
+def dateview(request):
+    happy = db.GqlQuery("SELECT * FROM Log WHERE dateTime = DATE(2011, 03, 24)")
+    requestday = int(request.matchdict['day'])
+    requestmonth = int(request.matchdict['month'])
+    requestyear = int(request.matchdict['year'])   
+    requestlocation = str(request.matchdict['location']) 
+    if 'form.submitted' in request.params:
+        result = parse(request.params['date'])
+        requestday = result.day
+        requestmonth = result.month
+        requestyear = result.year
+    sensors = config.Sensors.list
+    sensor_links = config.Sensors.anchor
+    sensor_tabs = str(88/len(sensors))+'%' # this adjusts size of sensor tab 
+                                           # links in mako template 
+    try:
+        if filtered_page_q == None:
+            filename = "nodata.png"
+    except NameError:
+        filename = 'nodata.png'
+    changelocation_url = '%s/data/%02d/%02d/%04d/' % (request.application_url, requestmonth, requestday, requestyear)
+    date = '%02d/%02d/%04d' % (requestmonth, requestday, requestyear)
+    
+    sensor_id = config.Sensors.anchor.index(requestlocation)
+
+    if sensor_id >= 0:
+        query_location = 'Temp'+config.Sensors.list[sensor_id]
+    else:
+        query_location = 'not found'
+    
+    day_start = datetime(2011, 03, 24)
+    day_end = day_start + timedelta(days=1)
+    '''
+    q = models.Log.gql("WHERE dateTime >= :1 AND dateTime < :2", day_start, day_end)
+    tlist = []
+    tl = q.fetch(1000)
+    cursor = q.cursor()
+    while len(tl) > 0:
+        tlist.extend(tl)
+        q = models.Log.gql("WHERE dateTime >= :1 AND dateTime < :2", day_start, day_end)
+        q.with_cursor(cursor)
+        tl = q.fetch(1000)
+        cursor = q.cursor()
+    '''
+    
+#    q = models.Sensor.all()
+    q = models.Sensor.get_by_key_name('TempBoiler Room', parent=None)
+#    q.filter('name =', 'Boiler Room')
+    q.filter('logs.dateTime >=', day_start)
+    q.filter('logs.dateTime <', day_end)
+#    happy.filter('Sensor.name =', 'TempBoiler Room')
+    logging = ''
+
+    log_print = q.logs.fetch(1440)
+    logging += str(q.name)
+    logging += '<br>'
+    logging += str(q.units)
+    logging += '<br>'
+    for logprint in log_print:
+        logging += str(logprint.dateTime)
+        logging += ' '
+        logging += str(logprint.reading)
+        logging += '<br>'
+    logging += '<br>'
+    
+    
+    return dict (filename = filename, date = date, requestlocation = requestlocation, 
+                 changelocation_url = changelocation_url, sensors = sensors,
+                 sensor_links = sensor_links, sensor_tabs = sensor_tabs, happy = logging)
+
+
+def test(request):
+    '''
+    debug view for google app engine
+    if you want to debug
+    simply add values to logging variable
+    then go to url /test to see results
+    '''
+    
+    logging = ''
+
+    sensors = models.Sensor.all()
+    for element in sensors:
+        logging += element.name
+        logging += '<br>'
+    day_start = datetime(2011, 03, 24)
+    day_end = day_start + timedelta(days=1)
+    happy = models.Log.all()
+    
+    happy.filter('dateTime >=', day_start)
+    happy.filter('dateTime <', day_end)
+#    happy = db.GqlQuery("SELECT * FROM Log WHERE dateTime = DATETIME(2011, 03, 24, *, *, *)")
+    for face in happy:
+        logging += str(face.dateTime)
+        logging += ' '
+        logging += str(face.reading)
+        logging += '<br>'
+
+    taskqueue.add()
+    
+    return dict(logging = logging, sensors = sensors)
+
+
+    
+
+def form2(request):
+     return {'project':'energy'}
